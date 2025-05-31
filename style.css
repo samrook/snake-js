@@ -1,0 +1,15 @@
+body, html, #container {
+    margin: 0;
+    height: 100vh;
+    width: 100vw;
+}
+
+#container {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+#main {
+    border: 1px solid black;
+}
