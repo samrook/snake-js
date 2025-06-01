@@ -1,5 +1,5 @@
 // Constants
-const FPS = 20;
+const FPS = 15;
 
 const CELL_SIZE = 10;
 
@@ -14,11 +14,13 @@ const DIRECTION_LEFT = 'left';
 const DIRECTION_UP = 'up';
 const DIRECTION_DOWN = 'down';
 
-const DEFAULT_DIRECTION = DIRECTION_RIGHT;
-
 const APPLE_COLOUR = 'red';
 const BACKGROUND_COLOUR = 'black';
 const SNAKE_COLOUR = 'green';
+
+const DEAD_TEXT = "You died, press SPACE to start again.";
+const PAUSED_TEXT = "Paused, press SPACE to resume.";
+const START_TEXT = "Welcome to snake, press SPACE to start.";
 
 // Game state
 let snake;
@@ -26,7 +28,7 @@ let apple;
 let isPaused = true;
 let isDead = false;
 let isStarted = false;
-let nextDirection = DEFAULT_DIRECTION;
+let direction = DIRECTION_RIGHT;
 
 // HTML Elements
 const canvas = document.getElementById('main');
@@ -42,10 +44,10 @@ function main() {
 
 function updateValues() {
     if (! isPaused) {
-        snake.direction = nextDirection;
-        const removedCell = snake.move();
+        snake.direction = direction;
+        snake.move();
         if (checkIfHitWall() || checkIfHitSelf()) {
-            playerDied(removedCell);
+            playerDied();
         } else {
             checkIfHitApple();
         }
@@ -86,20 +88,20 @@ function checkIfHitApple() {
     const snakeHead = snake.getHead();
 
     if (snakeHead.x === apple.x && snakeHead.y === apple.y) {
-        snake.tail.push({x: apple.x, y: apple.y});
+        snake.addToTail({x: apple.x, y: apple.y});
         apple = new Apple();
     }
 }
 
-function playerDied(removedCell) {
+function playerDied() {
     isDead = true;
 
     // restore previously removed cell to prevent snake appearing off-screen
     snake.tail.pop();
-    snake.tail.unshift(removedCell);
+    snake.tail.unshift(snake.lastRemovedCell);
 }
 
-function init() {
+function newGame() {
     snake = new Snake(canvas.width / 2, canvas.height / 2);
     apple = new Apple();
 }
@@ -114,51 +116,48 @@ function clearGrid() {
 
 function updateText() {
     const score = snake.tail.length - 1;
-    const text = `Score: ${score}`;
-    const deadText = "You died, press SPACE to start again.";
-    const pausedText = "Paused, press SPACE to resume.";
-    const startText = "Welcome to snake, press SPACE to start.";
+    const scoreText = `Score: ${score}`;
 
-    drawCenteredText(text, 18);
+    drawCenteredText(scoreText, 18);
 
     if (! isStarted) {
-        drawCenteredText(startText, 40);
+        drawCenteredText(START_TEXT, 40);
     } else if (isDead) {
-        drawCenteredText(deadText, 40);
+        drawCenteredText(DEAD_TEXT, 40);
     } else if (isPaused) {
-        drawCenteredText(pausedText, 40);
+        drawCenteredText(PAUSED_TEXT, 40);
     }
 }
 
 function drawCenteredText(text, y) {
     context.font = "20px Arial";
     context.fillStyle = "#00FF42";
-    context.fillText(text, (canvas.width / 2) - (text.length*4.5), y);
+    context.fillText(text, (canvas.width / 2) - (text.length * 4.5), y);
 }
 
 function handleInput(event) {
     switch (event.code) {
         case RIGHT_ARROW:
             if (snake.direction !== DIRECTION_LEFT) {
-                nextDirection = DIRECTION_RIGHT;
+                direction = DIRECTION_RIGHT;
             }
             break;
 
         case LEFT_ARROW:
             if (snake.direction !== DIRECTION_RIGHT) {
-                nextDirection = DIRECTION_LEFT;
+                direction = DIRECTION_LEFT;
             }
             break;
 
         case DOWN_ARROW:
             if (snake.direction !== DIRECTION_UP) {
-                nextDirection = DIRECTION_DOWN;
+                direction = DIRECTION_DOWN;
             }
             break;
 
         case UP_ARROW:
             if (snake.direction !== DIRECTION_DOWN) {
-                nextDirection = DIRECTION_UP;
+                direction = DIRECTION_UP;
             }
             break;
 
@@ -171,18 +170,16 @@ function handleInput(event) {
             }
             if (isDead) {
                 isDead = false;
-                init();
+                newGame();
             }
 
             break;
     }
 }
 
-function startGame() {
-    const renderLoop = new AnimationFrame(FPS, main);
-
-    init();
-    renderLoop.start();
+function boot() {
+    newGame();
+    (new AnimationFrameFpsLimiter(FPS, main)).start();
 }
 
 class Snake {
@@ -190,7 +187,8 @@ class Snake {
         this.x = x;
         this.y = y;
         this.tail = [{x: this.x, y: this.y}];
-        this.direction = DEFAULT_DIRECTION;
+        this.direction = direction;
+        this.lastRemovedCell = null;
     }
 
     draw() {
@@ -206,8 +204,8 @@ class Snake {
     }
 
     move() {
-        const snakeHead = this.tail[this.tail.length - 1];
-        const removedCell = this.tail.shift();
+        const snakeHead = this.getHead();
+        this.lastRemovedCell = this.tail.shift();
         let newCell;
 
         switch (this.direction) {
@@ -240,13 +238,15 @@ class Snake {
                 break;
         }
 
-        this.tail.push(newCell);
-
-        return removedCell;
+        this.addToTail(newCell);
     }
 
     getHead() {
         return this.tail[this.tail.length - 1];
+    }
+
+    addToTail(newCell) {
+        this.tail.push(newCell);
     }
 }
 
@@ -271,11 +271,11 @@ class Apple {
     }
 }
 
-class AnimationFrame {
-    constructor(fps = 60, animate) {
+class AnimationFrameFpsLimiter {
+    constructor(fps = 60, callback) {
         this.requestID = 0;
         this.fps = fps;
-        this.animate = animate;
+        this.callback = callback;
     }
 
     start() {
@@ -283,16 +283,16 @@ class AnimationFrame {
         const interval = 1000 / this.fps;
         const tolerance = 0.1;
 
-        const animateLoop = (now) => {
-            this.requestID = requestAnimationFrame(animateLoop);
+        const callbackLoop = (now) => {
+            this.requestID = requestAnimationFrame(callbackLoop);
             const delta = now - then;
 
             if (delta >= interval - tolerance) {
                 then = now - (delta % interval);
-                this.animate(delta);
+                this.callback();
             }
         };
-        this.requestID = requestAnimationFrame(animateLoop);
+        this.requestID = requestAnimationFrame(callbackLoop);
     }
 
     stop() {
@@ -300,5 +300,5 @@ class AnimationFrame {
     }
 }
 
-window.addEventListener('load', startGame);
+window.addEventListener('load', boot);
 window.addEventListener('keydown', handleInput);
